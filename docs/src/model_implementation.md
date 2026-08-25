@@ -29,7 +29,11 @@ Additionally:
 - `required_biogeochemical_auxiliary_fields` must return a tuple of auxiliary fields needed (typically `(:PAR,)`).
 - A tracer tendency method must be defined for each owned tracer via `(bgc::NutrientsPlanktonDetritus)(i, j, k, grid, ::Val{:P}, ...)`.
 
-The default elemental ratios (Redfield: C:N:P:Fe = 106:16:1:0.0032) are used automatically unless you override `carbon_ratio`, `nitrogen_ratio`, `phosphate_ratio`, or `iron_ratio`. You may also define `detritus_grazing` to implement zooplankton-like grazing on the detritus pools.
+Elemental composition is supplied by `carbon_ratio`, `nitrogen_ratio`, `phosphate_ratio`, `iron_ratio`, `silicon_ratio`, and `calcite_rain_ratio`. By default, these ratios are applied to all plankton following the Redfield ratio: C:N:P:Fe = 106:16:1:0.0032, with silicon and calcite rain ratios of zero. If different ratios are needed for specific plankton tracers, `group_element_tracers` can provide the composition of each tracer for conservation calculations.
+
+A plankton component can define one `chlorophyll_ratio` for all of its chlorophyll-bearing tracers, or define a different ratio for individual tracers.
+
+Plankton components can consume detritus by defining `grazing` for the detritus tracers they consume.
 
 ## Example: simple phytoplankton
 
@@ -48,7 +52,7 @@ import Oceananigans.Biogeochemistry: required_biogeochemical_tracers,
                                      required_biogeochemical_auxiliary_fields,
                                      biogeochemical_drift_velocity
 
-using OceanBioME: NutrientsPlanktonDetritus
+using OceanBioME: NutrientsPlanktonDetritus, setup_velocity_fields
 
 # the single-nutrient (nitrogen) enum and the interface generics we add methods to
 using OceanBioME.Models.NutrientsPlanktonDetritusModels: N
@@ -217,9 +221,13 @@ light_attenuation = PrescribedAttenuationPAR(grid, surface_PAR; attenuation = 0.
 
 sediment = InstantRemineralisationSediment(grid; sinking_tracers = :P, remineralisation_reciever = :N)
 
+# `setup_velocity_fields` builds a proper sinking `Field` (rather than a `ConstantField`), which
+# `WENO()` advection needs to compute the flux into the sediment at the bottom boundary
+sinking_velocity = setup_velocity_fields((; P = 2 / day), grid, true).P
+
 biogeochemistry = NutrientsPlanktonDetritus(grid;
                                             nutrients = Nutrients(N, nothing, nothing, nothing),
-                                            plankton  = SimplePhytoplankton(; sinking_velocity = ConstantField(-2/day)),
+                                            plankton  = SimplePhytoplankton(; sinking_velocity),
                                             detritus  = DissolvedParticulate(grid),
                                             light_attenuation,
                                             sediment,
